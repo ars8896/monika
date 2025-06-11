@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/L.Control.Locate.min.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet-control-geocoder.Geocoder.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<title>Peta Interaktif - Lahan Potensial</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+
+		<style>
+			/* Menghilangkan scrollbar dari halaman utama */
+			html, body {
+				overflow: hidden;
+				height: 100%;
+				width: 100%;
+			}
+
+			/* Kontainer untuk iframe */
+			.iframe-container {
+				position: fixed; /* Membuat container menempel di layar */
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				/* Beri padding atas seukuran tinggi header agar konten tidak tertutup */
+				padding-top: 3.25em; 
+				z-index: 1; /* Pastikan di bawah header (z-index header adalah 10001) */
+			}
+
+			/* Iframe itu sendiri, dibuat untuk mengisi penuh container */
+			.iframe-container iframe {
+				width: 100%;
+				height: 100%;
+				border: none; /* Menghilangkan border */
+			}
+
+			/* Penyesuaian padding untuk layar mobile (sesuai tinggi header mobile) */
+			@media screen and (max-width: 980px) {
+				.iframe-container {
+					padding-top: 44px;
+				}
+			}
+		</style>
+	</head>
+	<body class="subpage">
+
+		<header id="header">
+			<div class="logo"><a href="index.html">Lahan Potensial <span>by Monika</span></a></div>
+			<a href="#menu">Menu</a>
+		</header>
+
+		<nav id="menu">
+			<ul class="links">
+				<li><a href="index.html">Beranda</a></li>
+				<li><a href="peta-interaktif.html">Peta Interaktif</a></li>
+				<li><a href="data-kriteria.html">Data & Kriteria</a></li>
+				<li><a href="artikel.html">Artikel & Berita</a></li>
+				<li><a href="tentang.html">Tentang</a></li>
+				<li><a href="kontak.html">Kontak</a></li>
+			</ul>
+		</nav>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/L.Control.Locate.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet-control-geocoder.Geocoder.js"></script>
+        <script src="data/SKALADIYBatas_Desa_1.js"></script>
+        <script src="data/lahan_bebas_sungai_2.js"></script>
+        <script src="data/lahan_bebas_resiko_3.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+
+            if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
+              highlightLayer.setStyle({
+                color: '#ffff00',
+              });
+            } else {
+              highlightLayer.setStyle({
+                fillColor: '#ffff00',
+                fillOpacity: 1
+              });
+            }
+            highlightLayer.openPopup();
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[-7.832121331401052,110.07293583969626],[-7.474270347831456,110.70356743125214]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        L.control.locate({locateOptions: {maxZoom: 19}}).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_OpenStreetMapfr_0');
+        map.getPane('pane_OpenStreetMapfr_0').style.zIndex = 400;
+        var layer_OpenStreetMapfr_0 = L.tileLayer('http://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+            pane: 'pane_OpenStreetMapfr_0',
+            opacity: 1.0,
+            attribution: '<a href="http://www.openstreetmap.org/copyright">OpenStreetMap contributors, under ODbL</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OpenStreetMapfr_0;
+        map.addLayer(layer_OpenStreetMapfr_0);
+        function pop_SKALADIYBatas_Desa_1(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['STATUS_KOT'] !== null ? autolinker.link(String(feature.properties['STATUS_KOT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['KODE_2008'] !== null ? autolinker.link(String(feature.properties['KODE_2008']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">DESA_2008</th>\
+                        <td>' + (feature.properties['DESA_2008'] !== null ? autolinker.link(String(feature.properties['DESA_2008']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">KEC_2008</th>\
+                        <td>' + (feature.properties['KEC_2008'] !== null ? autolinker.link(String(feature.properties['KEC_2008']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['KAB_2008'] !== null ? autolinker.link(String(feature.properties['KAB_2008']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['PROP_2008'] !== null ? autolinker.link(String(feature.properties['PROP_2008']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SKALADIYBatas_Desa_1_0(feature) {
+            switch(String(feature.properties['KEC_2008'])) {
+                case 'BERBAH':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(221,203,228,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'CANGKRINGAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(215,194,223,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'DEPOK':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(208,185,218,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'GAMPING':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(202,176,213,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'GODEAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(196,167,208,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'KALASAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(203,179,214,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'MINGGIR':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(216,199,223,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'MLATI':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(228,218,233,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'MOYUDAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(241,237,242,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'NGAGLIK':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(237,244,237,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'NGEMPLAK':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(218,237,216,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'PAKEM':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(199,231,196,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'PRAMBANAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(180,224,175,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'SEYEGAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(167,220,163,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'SLEMAN':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(169,226,173,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'TEMPEL':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(172,232,183,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'TURI':
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(174,238,194,1.0)',
+                interactive: true,
+            }
+                    break;
+                default:
+                    return {
+                pane: 'pane_SKALADIYBatas_Desa_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(177,244,204,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_SKALADIYBatas_Desa_1');
+        map.getPane('pane_SKALADIYBatas_Desa_1').style.zIndex = 401;
+        map.getPane('pane_SKALADIYBatas_Desa_1').style['mix-blend-mode'] = 'normal';
+        var layer_SKALADIYBatas_Desa_1 = new L.geoJson(json_SKALADIYBatas_Desa_1, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SKALADIYBatas_Desa_1',
+            layerName: 'layer_SKALADIYBatas_Desa_1',
+            pane: 'pane_SKALADIYBatas_Desa_1',
+            onEachFeature: pop_SKALADIYBatas_Desa_1,
+            style: style_SKALADIYBatas_Desa_1_0,
+        });
+        bounds_group.addLayer(layer_SKALADIYBatas_Desa_1);
+        map.addLayer(layer_SKALADIYBatas_Desa_1);
+        function pop_lahan_bebas_sungai_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['FID_per_ka'] !== null ? autolinker.link(String(feature.properties['FID_per_ka']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['FID_pl_340'] !== null ? autolinker.link(String(feature.properties['FID_pl_340']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LUAS_ha'] !== null ? autolinker.link(String(feature.properties['LUAS_ha']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_lahan_bebas_sungai_2_0() {
+            return {
+                pane: 'pane_lahan_bebas_sungai_2',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(43,131,186,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_lahan_bebas_sungai_2');
+        map.getPane('pane_lahan_bebas_sungai_2').style.zIndex = 402;
+        map.getPane('pane_lahan_bebas_sungai_2').style['mix-blend-mode'] = 'normal';
+        var layer_lahan_bebas_sungai_2 = new L.geoJson(json_lahan_bebas_sungai_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_lahan_bebas_sungai_2',
+            layerName: 'layer_lahan_bebas_sungai_2',
+            pane: 'pane_lahan_bebas_sungai_2',
+            onEachFeature: pop_lahan_bebas_sungai_2,
+            style: style_lahan_bebas_sungai_2_0,
+        });
+        bounds_group.addLayer(layer_lahan_bebas_sungai_2);
+        map.addLayer(layer_lahan_bebas_sungai_2);
+        function pop_lahan_bebas_resiko_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['FID_per_ka'] !== null ? autolinker.link(String(feature.properties['FID_per_ka']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['FID_pl_340'] !== null ? autolinker.link(String(feature.properties['FID_pl_340']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LUAS_ha'] !== null ? autolinker.link(String(feature.properties['LUAS_ha']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_lahan_bebas_resiko_3_0() {
+            return {
+                pane: 'pane_lahan_bebas_resiko_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(215,25,28,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_lahan_bebas_resiko_3');
+        map.getPane('pane_lahan_bebas_resiko_3').style.zIndex = 403;
+        map.getPane('pane_lahan_bebas_resiko_3').style['mix-blend-mode'] = 'normal';
+        var layer_lahan_bebas_resiko_3 = new L.geoJson(json_lahan_bebas_resiko_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_lahan_bebas_resiko_3',
+            layerName: 'layer_lahan_bebas_resiko_3',
+            pane: 'pane_lahan_bebas_resiko_3',
+            onEachFeature: pop_lahan_bebas_resiko_3,
+            style: style_lahan_bebas_resiko_3_0,
+        });
+        bounds_group.addLayer(layer_lahan_bebas_resiko_3);
+        map.addLayer(layer_lahan_bebas_resiko_3);
+        var osmGeocoder = new L.Control.Geocoder({
+            collapsed: true,
+            position: 'topleft',
+            text: 'Search',
+            title: 'Testing'
+        }).addTo(map);
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .className += ' fa fa-search';
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .title += 'Search for a place';
+        var overlaysTree = [
+            {label: '<img src="legend/lahan_bebas_resiko_3.png" /> lahan_bebas_resiko', layer: layer_lahan_bebas_resiko_3},
+            {label: '<img src="legend/lahan_bebas_sungai_2.png" /> lahan_bebas_sungai', layer: layer_lahan_bebas_sungai_2},
+            {label: 'SKALADIY:Batas_Desa<br /><table><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_BERBAH0.png" /></td><td>BERBAH</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_CANGKRINGAN1.png" /></td><td>CANGKRINGAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_DEPOK2.png" /></td><td>DEPOK</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_GAMPING3.png" /></td><td>GAMPING</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_GODEAN4.png" /></td><td>GODEAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_KALASAN5.png" /></td><td>KALASAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_MINGGIR6.png" /></td><td>MINGGIR</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_MLATI7.png" /></td><td>MLATI</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_MOYUDAN8.png" /></td><td>MOYUDAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_NGAGLIK9.png" /></td><td>NGAGLIK</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_NGEMPLAK10.png" /></td><td>NGEMPLAK</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_PAKEM11.png" /></td><td>PAKEM</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_PRAMBANAN12.png" /></td><td>PRAMBANAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_SEYEGAN13.png" /></td><td>SEYEGAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_SLEMAN14.png" /></td><td>SLEMAN</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_TEMPEL15.png" /></td><td>TEMPEL</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_TURI16.png" /></td><td>TURI</td></tr><tr><td style="text-align: center;"><img src="legend/SKALADIYBatas_Desa_1_17.png" /></td><td></td></tr></table>', layer: layer_SKALADIYBatas_Desa_1},
+            {label: "OpenStreetMap.fr", layer: layer_OpenStreetMapfr_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: false, 
+        });
+        lay.addTo(map);
+		document.addEventListener("DOMContentLoaded", function() {
+            // set new Layers List height which considers toggle icon
+            function newLayersListHeight() {
+                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
+                if (layerScrollbarElement) {
+                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
+                    var originalHeight = layersListElement.style.height 
+                        || window.getComputedStyle(layersListElement).height;
+                    var newHeight = parseFloat(originalHeight) - 50;
+                    layersListElement.style.height = newHeight + 'px';
+                }
+            }
+            var isLayersListExpanded = true;
+            var controlLayersElement = document.querySelector('.leaflet-control-layers');
+            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
+            // toggle Collapsed/Expanded and apply new Layers List height
+            toggleLayerControl.addEventListener('click', function() {
+                if (isLayersListExpanded) {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                } else {
+                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
+                }
+                isLayersListExpanded = !isLayersListExpanded;
+                newLayersListHeight()
+            });	
+			// apply new Layers List height if toggle layerstree
+			if (controlLayersElement) {
+				controlLayersElement.addEventListener('click', function(event) {
+					var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
+					if (toggleLayerHeaderPointer) {
+						newLayersListHeight();
+					}
+				});
+			}
+            // Collapsed/Expanded at Start to apply new height
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            // Collapsed touch/small screen
+            var isSmallScreen = window.innerWidth < 650;
+            if (isSmallScreen) {
+                setTimeout(function() {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                    isLayersListExpanded = !isLayersListExpanded;
+                }, 500);
+            }  
+        });       
+        setBounds();
+        resetLabels([layer_SKALADIYBatas_Desa_1]);
+        map.on("zoomend", function(){
+            resetLabels([layer_SKALADIYBatas_Desa_1]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_SKALADIYBatas_Desa_1]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_SKALADIYBatas_Desa_1]);
+        });
+        </script>
+    </body>
+</html>
